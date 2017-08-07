@@ -1,0 +1,219 @@
+/******************************************************************************
+*
+*  LOGIC CORE:          LCD FIFO ctrl - Top level module			
+*  MODULE NAME:         lcd_fifo_ctrl()
+*  COMPANY:             
+*
+*  REVISION HISTORY:  
+*
+*
+*  FUNCTIONAL DESCRIPTION:
+*
+*  This module is the lcd interface module for the LGPhilip's LCD.
+*
+*  Copyright All rights reserved.  
+******************************************************************************/
+`timescale 1ns / 100ps
+module ddr3_switch_ctrl(
+                  clk,
+                  resetn, 
+					
+                  ddr3_req0,
+                  ddr3_rdy0,
+                  ddr3_req1,
+                  ddr3_rdy1,
+					
+                  //Avalon-MM Interface 0 signals
+                  avl_ready_0,                //              avl_0.waitrequest_n
+                  avl_burstbegin_0,           //                   .beginbursttransfer
+                  avl_addr_0,                 //                   .address
+                  avl_rdata_valid_0,          //                   .readdatavalid
+                  avl_rdata_0,                //                   .readdata
+                  avl_wdata_0,                //                   .writedata
+                  avl_be_0,                   //                   .byteenable
+                  avl_read_req_0,             //                   .read
+                  avl_write_req_0,            //                   .write
+                  avl_size_0,                 //                   .burstcount
+
+                  //Avalon-MM Interface 1 signals
+                  avl_ready_1,                //              avl_0.waitrequest_n
+                  avl_burstbegin_1,           //                   .beginbursttransfer
+                  avl_addr_1,                 //                   .address
+                  avl_rdata_valid_1,          //                   .readdatavalid
+                  avl_rdata_1,                //                   .readdata
+                  avl_wdata_1,                //                   .writedata
+                  avl_be_1,                   //                   .byteenable
+                  avl_read_req_1,             //                   .read
+                  avl_write_req_1,            //                   .write
+                  avl_size_1,                 //                   .burstcount
+
+                  //Avalon-MM Interface signals
+                  avl_ready,                //              avl_0.waitrequest_n
+                  avl_burstbegin,           //                   .beginbursttransfer
+                  avl_addr,                 //                   .address
+                  avl_rdata_valid,          //                   .readdatavalid
+                  avl_rdata,                //                   .readdata
+                  avl_wdata,                //                   .writedata
+                  avl_be,                   //                   .byteenable
+                  avl_read_req,             //                   .read
+                  avl_write_req,            //                   .write
+                  avl_size                  //                   .burstcount
+                  );
+
+   input				clk;
+   input				resetn;
+
+   input				ddr3_req0;
+   output			ddr3_rdy0;
+   input				ddr3_req1;
+   output			ddr3_rdy1;
+
+//---------Avalon-MM interface 0 signals-------------
+//
+   output         avl_ready_0;                //              avl_0.waitrequest_n
+   input        	avl_burstbegin_0;           //                   .beginbursttransfer
+   input  [23:0] 	avl_addr_0;                 //                   .address
+   output        	avl_rdata_valid_0;          //                   .readdatavalid
+   output [127:0] avl_rdata_0;                //                   .readdata
+   input  [127:0] avl_wdata_0;                //                   .writedata
+   input  [15:0]  avl_be_0;                   //                   .byteenable
+   input         	avl_read_req_0;             //                   .read
+   input         	avl_write_req_0;            //                   .write
+   input  [5:0]  	avl_size_0;                 //                   .burstcount
+
+//---------Avalon-MM interface signals-------------
+//
+   output         avl_ready_1;                //              avl_0.waitrequest_n
+   input        	avl_burstbegin_1;           //                   .beginbursttransfer
+   input  [23:0] 	avl_addr_1;                 //                   .address
+   output        	avl_rdata_valid_1;          //                   .readdatavalid
+   output [127:0] avl_rdata_1;                //                   .readdata
+   input  [127:0] avl_wdata_1;                //                   .writedata
+   input  [15:0]  avl_be_1;                   //                   .byteenable
+   input         	avl_read_req_1;             //                   .read
+   input         	avl_write_req_1;            //                   .write
+   input  [5:0]  	avl_size_1;                 //                   .burstcount
+
+//---------Avalon-MM interface signals-------------
+//
+   input         	avl_ready;                //              avl_0.waitrequest_n
+   output        	avl_burstbegin;           //                   .beginbursttransfer
+   output [23:0] 	avl_addr;                 //                   .address
+   input        	avl_rdata_valid;          //                   .readdatavalid
+   input  [127:0] avl_rdata;                //                   .readdata
+   output [127:0] avl_wdata;                //                   .writedata
+   output [15:0]  avl_be;                   //                   .byteenable
+   output         avl_read_req;             //                   .read
+   output         avl_write_req;            //                   .write
+   output [5:0]   avl_size;                 //                   .burstcount
+
+
+//--------------------------------
+//
+parameter
+		c_idle			= 4'h0,
+		c_write			= 4'h1,
+		c_write_wt	   = 4'h2,
+		c_read			= 4'h3,
+		c_read_wt		= 4'h4,
+		c_end				= 4'hf;
+
+reg [3:0] c_state;
+always @ (posedge clk or negedge resetn) begin
+	if(!resetn)
+		c_state <= c_idle;
+	else begin
+		case(c_state)
+		c_idle:
+			if(ddr3_req0)
+				c_state <= c_write;
+			else if(ddr3_req1)
+				c_state <= c_read;
+		
+		c_write:
+			c_state <= c_write_wt;
+		c_write_wt:
+			if(!ddr3_req0)
+				c_state <= c_idle;
+		
+		c_read:
+			c_state <= c_read_wt;
+		c_read_wt:
+			if(!ddr3_req1)
+				c_state <= c_idle;
+		
+		default:
+			c_state <= c_idle;
+		endcase
+	end
+end
+
+reg ddr3_rdy0;
+always @(posedge clk or negedge resetn)begin
+	if(!resetn)
+		ddr3_rdy0 <= 1'b0;
+	else if(c_state == c_write)
+		ddr3_rdy0 <= 1'b1;
+	else
+		ddr3_rdy0 <= 1'b0;
+end
+
+reg ddr3_rdy1;
+always @(posedge clk or negedge resetn)begin
+	if(!resetn)
+		ddr3_rdy1 <= 1'b0;
+	else if(c_state == c_read)
+		ddr3_rdy1 <= 1'b1;
+	else
+		ddr3_rdy1 <= 1'b0;
+end
+
+reg ddr3_sel0;
+always @(posedge clk or negedge resetn)begin
+	if(!resetn)
+		ddr3_sel0 <= 1'b0;
+	else if((c_state == c_write) || (c_state == c_write_wt))
+		ddr3_sel0 <= 1'b1;
+	else
+		ddr3_sel0 <= 1'b0;
+end
+
+reg ddr3_sel1;
+always @(posedge clk or negedge resetn)begin
+	if(!resetn)
+		ddr3_sel1 <= 1'b0;
+	else if((c_state == c_read) || (c_state == c_read_wt))
+		ddr3_sel1 <= 1'b1;
+	else
+		ddr3_sel1 <= 1'b0;
+end
+
+assign avl_burstbegin = ddr3_sel0 ? avl_burstbegin_0 : avl_burstbegin_1;
+assign avl_addr 		 = ddr3_sel0 ? avl_addr_0       : avl_addr_1;
+assign avl_wdata 		 = ddr3_sel0 ? avl_wdata_0      : avl_wdata_1;
+assign avl_be 			 = ddr3_sel0 ? avl_be_0         : avl_be_1;
+assign avl_read_req 	 = ddr3_sel0 ? avl_read_req_0   : avl_read_req_1;
+assign avl_write_req  = ddr3_sel0 ? avl_write_req_0  : avl_write_req_1;
+assign avl_size 		 = ddr3_sel0 ? avl_size_0       : avl_size_1;
+
+assign avl_ready_0 		 = ddr3_sel0 ? avl_ready : 1'b0;
+assign avl_rdata_valid_0 = 1'b0;
+assign avl_rdata_0 		 = 128'h0;
+
+assign avl_ready_1 		 = ddr3_sel1 ? avl_ready : 1'b0;
+assign avl_rdata_valid_1 = avl_rdata_valid;
+assign avl_rdata_1 		 = avl_rdata;
+
+//assign avl_burstbegin = avl_burstbegin_0;
+//assign avl_addr 			= avl_addr_0;
+//assign avl_wdata 			= avl_wdata_0;
+//assign avl_be 				= avl_be_0;
+//assign avl_read_req 	= avl_read_req_0;
+//assign avl_write_req 	= avl_write_req_0;
+//assign avl_size 			= avl_size_0;
+//
+//assign avl_ready_0 				= avl_ready;
+//assign avl_rdata_valid_0 	= avl_rdata_valid;
+//assign avl_rdata_0 				= avl_rdata;
+
+endmodule
